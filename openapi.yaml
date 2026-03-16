@@ -1,0 +1,410 @@
+openapi: 3.0.3
+info:
+  title: Expense Tracker API
+  description: A robust API for managing personal expenses, securely authenticating users, and retrieving analytics using JWT and Redis.
+  version: 1.0.0
+servers:
+  - url: http://localhost:5000
+    description: Local Development Server
+
+paths:
+  /auth/register:
+    post:
+      summary: Register a new user
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User successfully created
+        '409':
+          description: Email already registered
+
+  /auth/login:
+    post:
+      summary: Login to receive JWT tokens
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Successful authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Invalid email or password
+
+  /auth/refresh-token:
+    post:
+      summary: Rotate and refresh an access token
+      tags:
+        - Authentication
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+              required:
+                - refresh_token
+      responses:
+        '200':
+          description: Access token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Expired or invalid refresh token
+
+  /auth/logout:
+    post:
+      summary: Log the user out (Revokes refresh token)
+      tags:
+        - Authentication
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+              required:
+                - refresh_token
+      responses:
+        '200':
+          description: Logout successful
+
+  /expense:
+    get:
+      summary: Get all expenses for the user (Paginated & Filtered)
+      tags:
+        - Expenses
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: duration
+          schema:
+            type: string
+          description: e.g., 'lastweek', 'lastmonth', or 'YYYY-MM-DD,YYYY-MM-DD'
+        - in: query
+          name: expense_type
+          schema:
+            type: string
+            enum: [Credit, Debit]
+        - in: query
+          name: category
+          schema:
+            type: string
+            enum: [Groceries, Leisure, Electronics, Utilities, Clothing, Health, Others]
+        - in: query
+          name: search_word
+          schema:
+            type: string
+          description: Partial match on title or description
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: A paginated list of expenses
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedExpenses'
+
+    post:
+      summary: Create a new expense
+      tags:
+        - Expenses
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseRequest'
+      responses:
+        '201':
+          description: Expense successfully created
+
+  /expense/{expense_id}:
+    get:
+      summary: Get a specific expense by ID
+      tags:
+        - Expenses
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: expense_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Expense found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expense'
+        '404':
+          description: Expense not found
+
+    put:
+      summary: Update a specific expense
+      tags:
+        - Expenses
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: expense_id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseRequest'
+      responses:
+        '200':
+          description: Expense updated
+
+    delete:
+      summary: Delete a specific expense
+      tags:
+        - Expenses
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: expense_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Expense removed successfully
+
+  /users/{user_id}:
+    get:
+      summary: Retrieve the user's profile
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: User profile payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+                
+    put:
+      summary: Update a user's profile (Cannot update email or password here)
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                monthly_budget:
+                  type: integer
+      responses:
+        '200':
+          description: Profile updated
+
+  /analytics/{user_id}:
+    get:
+      summary: Get total analytics and monthly budget data
+      tags:
+        - Analytics
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Aggregated expense analytics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  Credit:
+                    type: integer
+                  Debit:
+                    type: integer
+                  MonthlyBudget:
+                    type: integer
+                  Difference:
+                    type: integer
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - username
+        - email_id
+        - password
+      properties:
+        username:
+          type: string
+        email_id:
+          type: string
+          format: email
+        password:
+          type: string
+        monthly_budget:
+          type: integer
+          default: 0
+
+    LoginRequest:
+      type: object
+      required:
+        - email_id
+        - password
+      properties:
+        email_id:
+          type: string
+          format: email
+        password:
+          type: string
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+
+    User:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        username:
+          type: string
+        email_id:
+          type: string
+        role:
+          type: string
+        monthly_budget:
+          type: integer
+
+    ExpenseRequest:
+      type: object
+      required:
+        - type
+        - title
+        - amount
+      properties:
+        type:
+          type: string
+          enum: [Credit, Debit]
+        title:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+          enum: [Groceries, Leisure, Electronics, Utilities, Clothing, Health, Others]
+        amount:
+          type: integer
+          description: Monies in absolute units
+
+    Expense:
+      allOf:
+        - $ref: '#/components/schemas/ExpenseRequest'
+        - type: object
+          properties:
+            expense_id:
+              type: integer
+            created_on:
+              type: string
+              format: date
+            user_id:
+              type: integer
+
+    PaginatedExpenses:
+      type: object
+      properties:
+        expenses:
+          type: array
+          items:
+            $ref: '#/components/schemas/Expense'
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+        pages:
+          type: integer
